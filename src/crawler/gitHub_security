@@ -1,0 +1,73 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# -----------------------------------------------
+# GitHub Security Advisories：https://github.com/advisories
+# REST API：https://api.github.com/advisories（无需认证，有速率限制）
+# -----------------------------------------------
+
+import re
+import requests
+from src.bean.cve_info import CVEInfo
+from src.crawler._base_crawler import BaseCrawler
+from color_log.clog import log
+
+
+class GitHubAdvisory(BaseCrawler):
+
+    def __init__(self):
+        BaseCrawler.__init__(self)
+        self.name_ch = 'GitHub 安全公告（GHSA）'
+        self.name_en = 'GitHub Advisory'
+        self.home_page = 'https://github.com/advisories'
+        self.url_list = 'https://api.github.com/advisories'
+
+
+    def NAME_CH(self):
+        return self.name_ch
+
+
+    def NAME_EN(self):
+        return self.name_en
+
+
+    def HOME_PAGE(self):
+        return self.home_page
+
+
+    def headers(self):
+        headers = super().headers()
+        headers['Accept'] = 'application/vnd.github+json'
+        return headers
+
+
+    def get_cves(self, limit = 10):
+        response = requests.get(
+            self.url_list,
+            headers = self.headers(),
+            params={'per_page': limit, 'sort': 'published', 'direction': 'desc'},
+            timeout = self.timeout
+        )
+        if response.status_code != 200:
+            log.warn('获取 [%s] 威胁情报失败： [HTTP Error %i]' % (self.NAME_CH(), response.status_code))
+            return []
+
+        cves = []
+        for obj in response.json():
+            cve = self.to_cve(obj)
+            if cve.is_vaild():
+                cves.append(cve)
+        return cves
+
+
+    def to_cve(self, obj):
+        cve = CVEInfo()
+        cve.src = self.NAME_CH()
+        cve.id = obj.get('cve_id') or obj.get('ghsa_id') or ''
+        cve.url = obj.get('html_url') or self.home_page
+        cve.time = (obj.get('published_at') or '').replace('T', ' ').replace('Z', '')
+
+        summary = obj.get('summary') or ''
+        severity = (obj.get('severity') or '').upper()
+        cve.title = '[%s] %s' % (severity, summary) if severity else summary
+        cve.info = (obj.get('description') or summary).strip()
+        return cve
